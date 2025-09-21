@@ -26,6 +26,42 @@ export default class BouncingLogo
         this.setAnimation()
     }
 
+    createCanvasTexture(text) {
+        const width = 2048
+        const height = 512
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+
+        // Background fully transparent
+        ctx.clearRect(0, 0, width, height)
+
+        // Optional subtle backdrop for visibility
+        // ctx.fillStyle = 'rgba(0,0,0,0.15)'
+        // ctx.fillRect(0, 0, width, height)
+
+        // Text styling
+        ctx.font = 'bold 220px Poppins, Arial, sans-serif'
+        ctx.fillStyle = '#ffffff'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+
+        // Shadow for contrast
+        ctx.shadowColor = 'rgba(0,0,0,0.35)'
+        ctx.shadowBlur = 20
+        ctx.shadowOffsetX = 0
+        ctx.shadowOffsetY = 4
+
+        ctx.fillText(text, width / 2, height / 2)
+
+        const texture = new THREE.CanvasTexture(canvas)
+        texture.encoding = THREE.sRGBEncoding
+        texture.anisotropy = 8
+        texture.needsUpdate = true
+        return texture
+    }
+
     setModel()
     {
         this.model = {}
@@ -36,8 +72,8 @@ export default class BouncingLogo
         this.model.group.position.z = 1.630
         this.scene.add(this.model.group)
 
-        this.model.texture = this.resources.items.threejsJourneyLogoTexture
-        this.model.texture.encoding = THREE.sRGBEncoding
+        // Use dynamic canvas texture that reads: 'PixelProphett digital studio'
+        this.model.texture = this.createCanvasTexture('PixelProphett digital studio')
 
         this.model.geometry = new THREE.PlaneGeometry(4, 1, 1, 1)
         this.model.geometry.rotateY(- Math.PI * 0.5)
