@@ -1,9 +1,21 @@
 {
+  "name": "my-room-in-3d",
+  "version": "1.0.0",
+  "private": true,
+  "description": "3D Room Visualization with Three.js",
   "repository": "#",
   "license": "UNLICENSED",
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
   "scripts": {
-    "build": "webpack --config ./bundler/webpack.prod.js",
-    "dev": "webpack serve --config ./bundler/webpack.dev.js",
+    "dev": "webpack serve --config ./bundler/webpack.dev.js --mode development",
+    "build": "webpack --config ./bundler/webpack.prod.js --mode production",
+    "start": "serve dist -s -l 3000",
+    "preview": "npm run build && npm run start",
+    "clean": "rimraf dist",
+    "analyze": "webpack-bundle-analyzer dist/bundle.js",
     "prod": "git switch prod; git merge main; git push; git switch main"
   },
   "dependencies": {
@@ -31,5 +43,10 @@
     "webpack-cli": "^4.7.2",
     "webpack-dev-server": "^3.11.2",
     "webpack-merge": "^5.8.0"
+  },
+  "devDependencies": {
+    "rimraf": "^5.0.5",
+    "serve": "^14.2.1",
+    "webpack-bundle-analyzer": "^4.9.1"
   }
 }
