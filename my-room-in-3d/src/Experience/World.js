@@ -8,6 +8,7 @@ import TopChair from './TopChair.js'
 import ElgatoLight from './ElgatoLight.js'
 import BouncingLogo from './BouncingLogo.js'
 import Screen from './Screen.js'
+import Watermark from './Watermark.js'
 
 export default class World
 {
@@ -30,6 +31,7 @@ export default class World
                 this.setElgatoLight()
                 this.setBouncingLogo()
                 this.setScreens()
+                this.setWatermark()
             }
         })
     }
@@ -79,6 +81,22 @@ export default class World
             this.resources.items.macScreenModel.scene.children[0],
             '/assets/videoStream.mp4'
         )
+    }
+
+    setWatermark()
+    {
+        // Ensure screens are initialized
+        if(!this.pcScreen || !this.pcScreen.model || !this.pcScreen.model.mesh)
+            return
+
+        this.watermark = new Watermark({
+            text: 'PixelProphett',
+            opacity: 0.38,
+            scale: new THREE.Vector2(0.75, 0.22), // width x height in meters
+            yOffset: 0.38,
+            backOffset: 0.025,
+            screenMesh: this.pcScreen.model.mesh
+        })
     }
 
     resize()
