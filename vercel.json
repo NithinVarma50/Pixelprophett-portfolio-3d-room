@@ -3,7 +3,7 @@
   "name": "my-room-in-3d",
   "builds": [
     {
-      "src": "my-room-in-3d/package.json",
+      "src": "package.json",
       "use": "@vercel/static-build",
       "config": {
         "distDir": "dist"
