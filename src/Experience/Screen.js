@@ -16,9 +16,10 @@ export default class Screen
         this.sourcePath = _sourcePath
         this.options = {
             cropAspect: null, // e.g., 16/10 for 16:10 crop; null to show full image
-            coverToMesh: true, // when true, compute mesh aspect and crop to fill without distortion
-            textureRotation: 0, // radians; set to Math.PI if texture appears upside down
-            flipY: false, // force flipY setting on texture
+            cacheBust: false, // append ?v=timestamp to force refresh
+            rotate180: false, // rotate texture 180 degrees
+            flipVertical: false, // flip along Y in UV space
+            flipHorizontal: false, // flip along X in UV space
             ..._options
         }
 
@@ -30,6 +31,9 @@ export default class Screen
         this.model = {}
 
         const isVideo = typeof this.sourcePath === 'string' && /\.(mp4|webm|ogg)$/i.test(this.sourcePath)
+        const url = this.options.cacheBust && typeof this.sourcePath === 'string'
+            ? `${this.sourcePath}${this.sourcePath.includes('?') ? '&' : '?'}v=${Date.now()}`
+            : this.sourcePath
 
         if(isVideo)
         {
@@ -40,14 +44,13 @@ export default class Screen
             this.model.element.controls = true
             this.model.element.playsInline = true
             this.model.element.autoplay = true
-            this.model.element.src = this.sourcePath
+            this.model.element.src = url
             this.model.element.play()
 
             // Video texture
             this.model.texture = new THREE.VideoTexture(this.model.element)
             this.model.texture.encoding = THREE.sRGBEncoding
-            this.model.texture.flipY = this.options.flipY === true
-            this.applyCroppingAndTransforms()
+            this.applyCroppingIfNeeded()
         }
         else
         {
@@ -55,7 +58,7 @@ export default class Screen
             const loader = new THREE.TextureLoader()
             this.model.texture = new THREE.Texture()
             loader.load(
-                this.sourcePath,
+                url,
                 (tex) => {
                     // Support both legacy and modern color space APIs
                     if ('SRGBColorSpace' in THREE) {
@@ -64,7 +67,7 @@ export default class Screen
                     } else {
                         tex.encoding = THREE.sRGBEncoding
                     }
-                    tex.flipY = this.options.flipY === true ? true : false // default false to match GLTF UVs
+                    tex.flipY = false // Match GLTF/video screen UVs
                     // Improve readability on steep angles
                     tex.anisotropy = Math.min(16, this.experience.renderer.instance.capabilities.getMaxAnisotropy?.() || 8)
                     tex.minFilter = THREE.LinearFilter
@@ -72,7 +75,8 @@ export default class Screen
                     tex.generateMipmaps = false
                     tex.needsUpdate = true
                     this.model.texture = tex
-                    this.applyCroppingAndTransforms()
+                    this.applyCroppingIfNeeded()
+                    this.applyFlipRotateIfNeeded()
                     if(this.model.material)
                     {
                         this.model.material.map = tex
@@ -87,7 +91,7 @@ export default class Screen
         }
 
         // Material
-        this.model.material = new THREE.MeshBasicMaterial({ map: this.model.texture, toneMapped: false, side: THREE.DoubleSide })
+        this.model.material = new THREE.MeshBasicMaterial({ map: this.model.texture, toneMapped: false })
 
         // Mesh
         this.model.mesh = this.mesh
@@ -95,50 +99,64 @@ export default class Screen
         this.scene.add(this.model.mesh)
     }
 
-    getMeshAspect()
-    {
-        if(!this.mesh || !this.mesh.geometry) return null
-        const geo = this.mesh.geometry
-        if(!geo.boundingBox) geo.computeBoundingBox()
-        const bb = geo.boundingBox
-        if(!bb) return null
-        const size = new THREE.Vector3()
-        bb.getSize(size)
-        // Use X (width) and Y (height) dimensions in local space
-        const width = Math.abs(size.x) > 0 ? Math.abs(size.x) : 1
-        const height = Math.abs(size.y) > 0 ? Math.abs(size.y) : 1
-        return width / height
-    }
-
-    applyCroppingAndTransforms()
+    applyFlipRotateIfNeeded()
     {
         const tex = this.model.texture
         if(!tex) return
 
-        // Determine desired aspect
-        let desired = this.options.cropAspect
-        if(this.options.coverToMesh)
+        // Default UV transform center is (0,0). Move to center for rotation.
+        if(this.options.rotate180)
         {
-            const meshAspect = this.getMeshAspect()
-            if(meshAspect) desired = meshAspect
+            tex.center.set(0.5, 0.5)
+            tex.rotation = Math.PI
         }
 
-        // If we cannot determine desired or texture not ready, reset
+        // Apply flips by adjusting repeat/offset while preserving existing crop repeat/offset
+        // Current repeat/offset (possibly set by cropping)
+        let rX = tex.repeat.x
+        let rY = tex.repeat.y
+        let oX = tex.offset.x
+        let oY = tex.offset.y
+
+        if(this.options.flipHorizontal)
+        {
+            rX = -rX
+            // When flipping, shift offset so the same area stays visible
+            oX = oX + (1 - Math.abs(tex.repeat.x)) - (1 - Math.abs(rX))
+            // Simpler central flip respecting crop:
+            oX = 1 - (oX + Math.abs(rX))
+        }
+
+        if(this.options.flipVertical)
+        {
+            rY = -rY
+            oY = 1 - (oY + Math.abs(rY))
+        }
+
+        tex.repeat.set(rX, rY)
+        tex.offset.set(oX, oY)
+        tex.needsUpdate = true
+    }
+
+    applyCroppingIfNeeded()
+    {
+        const tex = this.model.texture
+        if(!tex) return
+        const desired = this.options.cropAspect
         if(!desired || !tex.image || !tex.image.width || !tex.image.height)
         {
+            // Reset to full image if no cropping desired or not yet possible
             tex.offset.set(0, 0)
             tex.repeat.set(1, 1)
             tex.wrapS = THREE.ClampToEdgeWrapping
             tex.wrapT = THREE.ClampToEdgeWrapping
-            tex.center.set(0.5, 0.5)
-            tex.rotation = this.options.textureRotation || 0
             tex.needsUpdate = true
             return
         }
 
         const imgAspect = tex.image.width / tex.image.height
 
-        // Central crop to cover desired aspect
+        // Initialize
         let repeatX = 1
         let repeatY = 1
         let offsetX = 0
@@ -146,23 +164,23 @@ export default class Screen
 
         if(desired > imgAspect)
         {
-            // Crop top/bottom
+            // Desired is wider than the image => crop vertically (top/bottom)
+            // width remains 1, reduce height to match aspect
             repeatY = imgAspect / desired
             offsetY = (1 - repeatY) * 0.5
         }
         else if(desired < imgAspect)
         {
-            // Crop left/right
+            // Desired is narrower than the image => crop horizontally (left/right)
             repeatX = desired / imgAspect
             offsetX = (1 - repeatX) * 0.5
         }
+        // else desired == imgAspect: no crop
 
         tex.wrapS = THREE.ClampToEdgeWrapping
         tex.wrapT = THREE.ClampToEdgeWrapping
         tex.repeat.set(repeatX, repeatY)
         tex.offset.set(offsetX, offsetY)
-        tex.center.set(0.5, 0.5)
-        tex.rotation = this.options.textureRotation || 0 // allow forcing upright
         tex.needsUpdate = true
     }
 
