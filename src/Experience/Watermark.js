@@ -13,6 +13,18 @@ export default class Watermark {
     this.scale = options.scale || new THREE.Vector2(0.6, 0.2) // meters
     this.yOffset = options.yOffset ?? 0.35 // meters above the screen
     this.backOffset = options.backOffset ?? 0.02 // push towards the wall along screen normal
+    this.imageUrl = options.imageUrl || null // optional poster image
+
+    // Frame/border options
+    this.enableBorder = options.enableBorder ?? true
+    this.borderThickness = options.borderThickness ?? 0.02 // meters extra on each side
+    this.borderColor = options.borderColor || '#111111'
+    this.borderOpacity = options.borderOpacity ?? 0.8
+
+    // Realism/placement options
+    this.enableAutoFromImage = options.enableAutoFromImage ?? true // auto set width from image aspect keeping height (scale.y)
+    this.fitMode = options.fitMode || 'height' // 'height' or 'width'
+    this.tiltZ = options.tiltZ ?? 0 // slight rotation for realism (in radians)
 
     this.screenMesh = options.screenMesh // required
 
@@ -56,45 +68,108 @@ export default class Watermark {
   }
 
   setWatermark() {
-    // Build material with transparent texture
-    const texture = this.createCanvasTexture(this.text)
+    const build = (texture, imgAspect = null) => {
+      // Poster material
+      this.material = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        opacity: this.opacity,
+        depthWrite: false,
+        toneMapped: false
+      })
 
-    this.material = new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      opacity: this.opacity,
-      depthWrite: false
-    })
+      // Group to hold poster and border for unified transform
+      this.group = new THREE.Group()
 
-    // Plane geometry sized by provided scale (meters)
-    this.geometry = new THREE.PlaneGeometry(this.scale.x, this.scale.y)
-    this.mesh = new THREE.Mesh(this.geometry, this.material)
+      // Determine geometry size with optional auto aspect from image
+      let width = this.scale.x
+      let height = this.scale.y
+      if (this.imageUrl && this.enableAutoFromImage && imgAspect) {
+        if (this.fitMode === 'height') {
+          height = this.scale.y
+          width = height * imgAspect
+        } else {
+          width = this.scale.x
+          height = width / imgAspect
+        }
+      }
 
-    // Align orientation to the screen and position slightly above it, pushed back to the wall
-    const worldPos = new THREE.Vector3()
-    const worldQuat = new THREE.Quaternion()
+      // Plane geometry sized by computed width/height (meters)
+      this.geometry = new THREE.PlaneGeometry(width, height)
+      this.mesh = new THREE.Mesh(this.geometry, this.material)
+      this.mesh.renderOrder = 2
+      this.mesh.position.z = 0.001 // in front of border to prevent z-fighting
+      this.group.add(this.mesh)
 
-    this.screenMesh.getWorldPosition(worldPos)
-    this.screenMesh.getWorldQuaternion(worldQuat)
+      // Optional subtle border/frame
+      if (this.enableBorder) {
+        const bw = width + this.borderThickness * 2
+        const bh = height + this.borderThickness * 2
+        const borderGeometry = new THREE.PlaneGeometry(bw, bh)
+        const borderMaterial = new THREE.MeshBasicMaterial({
+          color: new THREE.Color(this.borderColor),
+          transparent: true,
+          opacity: this.borderOpacity,
+          depthWrite: false,
+          toneMapped: false
+        })
+        this.borderMesh = new THREE.Mesh(borderGeometry, borderMaterial)
+        this.borderMesh.renderOrder = 1
+        this.group.add(this.borderMesh)
+      }
 
-    // Compute forward (normal) of the screen in world space
-    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuat)
+      // Align orientation to the screen and position slightly above it, pushed back to the wall
+      const worldPos = new THREE.Vector3()
+      const worldQuat = new THREE.Quaternion()
 
-    // Set orientation
-    this.mesh.quaternion.copy(worldQuat)
+      this.screenMesh.getWorldPosition(worldPos)
+      this.screenMesh.getWorldQuaternion(worldQuat)
 
-    // Offset: up and back along the forward vector (negative to go towards wall)
-    const pos = worldPos.clone()
-    pos.y += this.yOffset
-    pos.add(forward.clone().multiplyScalar(-this.backOffset))
+      // Compute forward (normal) of the screen in world space
+      const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuat)
 
-    this.mesh.position.copy(pos)
+      // Set orientation on the group
+      this.group.quaternion.copy(worldQuat)
 
-    // Slightly reduce reflectance with tone mapping
-    this.material.toneMapped = false
+      // Offset: up and back along the forward vector (negative to go towards wall)
+      const pos = worldPos.clone()
+      pos.y += this.yOffset
+      pos.add(forward.clone().multiplyScalar(-this.backOffset))
 
-    this.scene.add(this.mesh)
+      this.group.position.copy(pos)
 
+      // Slight tilt for realism
+      if (this.tiltZ) this.group.rotation.z += this.tiltZ
+
+      this.scene.add(this.group)
+      this.setupDebug(width, height)
+    }
+
+    // Create poster texture
+    if (this.imageUrl) {
+      const loader = new THREE.TextureLoader()
+      loader.load(
+        this.imageUrl,
+        (tex) => {
+          tex.encoding = THREE.sRGBEncoding
+          const img = tex.image
+          const aspect = img && img.width ? img.width / img.height : null
+          build(tex, aspect)
+        },
+        undefined,
+        () => {
+          // Fallback to text if image fails
+          const tex = this.createCanvasTexture(this.text)
+          build(tex, null)
+        }
+      )
+    } else {
+      const texture = this.createCanvasTexture(this.text)
+      build(texture, null)
+    }
+  }
+
+  setupDebug(width, height) {
     // Debug controls
     if (this.debug) {
       const folder = this.debug.addFolder({ title: 'watermark', expanded: false })
@@ -102,16 +177,73 @@ export default class Watermark {
         this.material.opacity = this.opacity
       })
       folder.addInput(this.scale, 'x', { label: 'scale.x', min: 0.1, max: 3, step: 0.05 }).on('change', () => {
-        this.mesh.scale.x = this.scale.x / (this.geometry.parameters.width || 1)
+        const w = this.enableAutoFromImage && this.imageUrl && this.fitMode === 'height' && this.mesh.material.map?.image
+          ? this.scale.y * (this.mesh.material.map.image.width / this.mesh.material.map.image.height)
+          : this.scale.x
+        const h = this.enableAutoFromImage && this.imageUrl && this.fitMode === 'width' && this.mesh.material.map?.image
+          ? this.scale.x / (this.mesh.material.map.image.width / this.mesh.material.map.image.height)
+          : this.scale.y
+        this.mesh.geometry.dispose()
+        this.mesh.geometry = new THREE.PlaneGeometry(w, h)
+        if (this.borderMesh) {
+          const bw = w + this.borderThickness * 2
+          const bh = h + this.borderThickness * 2
+          this.borderMesh.geometry.dispose()
+          this.borderMesh.geometry = new THREE.PlaneGeometry(bw, bh)
+        }
       })
       folder.addInput(this.scale, 'y', { label: 'scale.y', min: 0.05, max: 2, step: 0.05 }).on('change', () => {
-        this.mesh.scale.y = this.scale.y / (this.geometry.parameters.height || 1)
+        const w = this.enableAutoFromImage && this.imageUrl && this.fitMode === 'height' && this.mesh.material.map?.image
+          ? this.scale.y * (this.mesh.material.map.image.width / this.mesh.material.map.image.height)
+          : this.scale.x
+        const h = this.enableAutoFromImage && this.imageUrl && this.fitMode === 'width' && this.mesh.material.map?.image
+          ? this.scale.x / (this.mesh.material.map.image.width / this.mesh.material.map.image.height)
+          : this.scale.y
+        this.mesh.geometry.dispose()
+        this.mesh.geometry = new THREE.PlaneGeometry(w, h)
+        if (this.borderMesh) {
+          const bw = w + this.borderThickness * 2
+          const bh = h + this.borderThickness * 2
+          this.borderMesh.geometry.dispose()
+          this.borderMesh.geometry = new THREE.PlaneGeometry(bw, bh)
+        }
       })
       folder.addInput(this, 'yOffset', { min: -1, max: 2, step: 0.01 }).on('change', () => {
-        const base = this.screenMesh.position.clone()
-        this.mesh.position.y = base.y + this.yOffset
+        const worldPos2 = new THREE.Vector3()
+        const worldQuat2 = new THREE.Quaternion()
+        this.screenMesh.getWorldPosition(worldPos2)
+        this.screenMesh.getWorldQuaternion(worldQuat2)
+        const forward2 = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuat2)
+        const pos2 = worldPos2.clone()
+        pos2.y += this.yOffset
+        pos2.add(forward2.clone().multiplyScalar(-this.backOffset))
+        this.group.position.copy(pos2)
       })
-      folder.addInput(this, 'backOffset', { min: -0.5, max: 0.5, step: 0.005 })
+      folder.addInput(this, 'backOffset', { min: -0.5, max: 0.5, step: 0.005 }).on('change', () => {
+        const worldPos2 = new THREE.Vector3()
+        const worldQuat2 = new THREE.Quaternion()
+        this.screenMesh.getWorldPosition(worldPos2)
+        this.screenMesh.getWorldQuaternion(worldQuat2)
+        const forward2 = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuat2)
+        const pos2 = worldPos2.clone()
+        pos2.y += this.yOffset
+        pos2.add(forward2.clone().multiplyScalar(-this.backOffset))
+        this.group.position.copy(pos2)
+      })
+      folder.addInput(this, 'enableBorder')
+      folder.addInput(this, 'borderThickness', { min: 0, max: 0.2, step: 0.001 }).on('change', () => {
+        if (this.borderMesh) {
+          const params = this.mesh.geometry.parameters
+          const bw = params.width + this.borderThickness * 2
+          const bh = params.height + this.borderThickness * 2
+          this.borderMesh.geometry.dispose()
+          this.borderMesh.geometry = new THREE.PlaneGeometry(bw, bh)
+        }
+      })
+      folder.addInput(this, 'tiltZ', { label: 'tiltZ(rad)', min: -0.3, max: 0.3, step: 0.005 }).on('change', () => {
+        this.group.rotation.z = this.tiltZ
+      })
     }
   }
 }
+

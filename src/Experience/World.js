@@ -91,10 +91,18 @@ export default class World
 
         this.watermark = new Watermark({
             text: 'PixelProphett',
-            opacity: 0.38,
-            scale: new THREE.Vector2(0.75, 0.22), // width x height in meters
-            yOffset: 0.38,
-            backOffset: 0.025,
+            imageUrl: '/assets/unnamed.png', // your uploaded poster image
+            opacity: 0.95,
+            scale: new THREE.Vector2(0.6, 0.24), // base size; width will auto-adjust from image aspect
+            yOffset: 0.46, // place a little higher above the monitor
+            backOffset: 0.032, // push slightly more towards the wall
+            tiltZ: 0.02, // subtle tilt for realism
+            enableAutoFromImage: true,
+            fitMode: 'height',
+            enableBorder: true,
+            borderThickness: 0.02,
+            borderColor: '#0b0b0b',
+            borderOpacity: 0.9,
             screenMesh: this.pcScreen.model.mesh
         })
     }
