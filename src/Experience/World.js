@@ -76,12 +76,12 @@ export default class World
         this.pcScreen = new Screen(
             this.resources.items.pcScreenModel.scene.children[0],
             '/assets/unnamed.png',
-            { cacheBust: true, flipVertical: true }
+            { cacheBust: true }
         )
         this.macScreen = new Screen(
             this.resources.items.macScreenModel.scene.children[0],
             '/assets/unnamed.png',
-            { cropAspect: 16 / 10, cacheBust: true, flipVertical: true }
+            { cropAspect: 16 / 10, cacheBust: true }
         )
     }
 
