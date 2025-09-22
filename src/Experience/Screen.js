@@ -20,6 +20,8 @@ export default class Screen
             rotate180: false, // rotate texture 180 degrees
             flipVertical: false, // flip along Y in UV space
             flipHorizontal: false, // flip along X in UV space
+            zoom: 1, // >1 to slightly zoom-in (overscan) to hide borders
+            flipY: undefined, // if set, overrides tex.flipY
             ..._options
         }
 
@@ -50,7 +52,9 @@ export default class Screen
             // Video texture
             this.model.texture = new THREE.VideoTexture(this.model.element)
             this.model.texture.encoding = THREE.sRGBEncoding
+            if(typeof this.options.flipY === 'boolean') this.model.texture.flipY = this.options.flipY
             this.applyCroppingIfNeeded()
+            this.applyFlipRotateIfNeeded()
         }
         else
         {
@@ -67,7 +71,8 @@ export default class Screen
                     } else {
                         tex.encoding = THREE.sRGBEncoding
                     }
-                    tex.flipY = false // Match GLTF/video screen UVs
+                    // Respect explicit flipY option if provided; otherwise default to false to match GLTF UVs
+                    tex.flipY = typeof this.options.flipY === 'boolean' ? this.options.flipY : false
                     // Improve readability on steep angles
                     tex.anisotropy = Math.min(16, this.experience.renderer.instance.capabilities.getMaxAnisotropy?.() || 8)
                     tex.minFilter = THREE.LinearFilter
@@ -91,7 +96,7 @@ export default class Screen
         }
 
         // Material
-        this.model.material = new THREE.MeshBasicMaterial({ map: this.model.texture, toneMapped: false })
+        this.model.material = new THREE.MeshBasicMaterial({ map: this.model.texture, toneMapped: false, side: THREE.DoubleSide })
 
         // Mesh
         this.model.mesh = this.mesh
@@ -143,39 +148,44 @@ export default class Screen
         const tex = this.model.texture
         if(!tex) return
         const desired = this.options.cropAspect
-        if(!desired || !tex.image || !tex.image.width || !tex.image.height)
-        {
-            // Reset to full image if no cropping desired or not yet possible
-            tex.offset.set(0, 0)
-            tex.repeat.set(1, 1)
-            tex.wrapS = THREE.ClampToEdgeWrapping
-            tex.wrapT = THREE.ClampToEdgeWrapping
-            tex.needsUpdate = true
-            return
-        }
+        const hasImage = tex.image && tex.image.width && tex.image.height
 
-        const imgAspect = tex.image.width / tex.image.height
-
-        // Initialize
+        // Defaults: full image
         let repeatX = 1
         let repeatY = 1
         let offsetX = 0
         let offsetY = 0
 
-        if(desired > imgAspect)
+        if(desired && hasImage)
         {
-            // Desired is wider than the image => crop vertically (top/bottom)
-            // width remains 1, reduce height to match aspect
-            repeatY = imgAspect / desired
-            offsetY = (1 - repeatY) * 0.5
+            const imgAspect = tex.image.width / tex.image.height
+            if(desired > imgAspect)
+            {
+                // Desired is wider than the image => crop vertically (top/bottom)
+                repeatY = imgAspect / desired
+                offsetY = (1 - repeatY) * 0.5
+            }
+            else if(desired < imgAspect)
+            {
+                // Desired is narrower than the image => crop horizontally (left/right)
+                repeatX = desired / imgAspect
+                offsetX = (1 - repeatX) * 0.5
+            }
+            // else desired == imgAspect: no crop
         }
-        else if(desired < imgAspect)
+
+        // Apply zoom (overscan). Zoom>1 means view a smaller portion of the texture.
+        const zoom = Math.max(0.5, this.options.zoom || 1)
+        if(zoom !== 1)
         {
-            // Desired is narrower than the image => crop horizontally (left/right)
-            repeatX = desired / imgAspect
-            offsetX = (1 - repeatX) * 0.5
+            const zX = repeatX / zoom
+            const zY = repeatY / zoom
+            // Re-center after zoom
+            offsetX = offsetX + (repeatX - zX) * 0.5
+            offsetY = offsetY + (repeatY - zY) * 0.5
+            repeatX = zX
+            repeatY = zY
         }
-        // else desired == imgAspect: no crop
 
         tex.wrapS = THREE.ClampToEdgeWrapping
         tex.wrapT = THREE.ClampToEdgeWrapping
