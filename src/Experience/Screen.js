@@ -42,17 +42,42 @@ export default class Screen
         }
         else
         {
-            // Image texture
-            this.model.texture = new THREE.TextureLoader().load(this.sourcePath)
-            this.model.texture.encoding = THREE.sRGBEncoding
-            // Match GLTF/video screen UVs (video textures default flipY=false)
-            this.model.texture.flipY = false
+            // Image texture (load async and assign when ready)
+            const loader = new THREE.TextureLoader()
+            this.model.texture = new THREE.Texture()
+            loader.load(
+                this.sourcePath,
+                (tex) => {
+                    // Support both legacy and modern color space APIs
+                    if ('SRGBColorSpace' in THREE) {
+                        // three r152+
+                        tex.colorSpace = THREE.SRGBColorSpace
+                    } else {
+                        tex.encoding = THREE.sRGBEncoding
+                    }
+                    tex.flipY = false // Match GLTF/video screen UVs
+                    // Improve readability on steep angles
+                    tex.anisotropy = Math.min(16, this.experience.renderer.instance.capabilities.getMaxAnisotropy?.() || 8)
+                    tex.minFilter = THREE.LinearFilter
+                    tex.magFilter = THREE.LinearFilter
+                    tex.generateMipmaps = false
+                    tex.needsUpdate = true
+                    this.model.texture = tex
+                    if(this.model.material)
+                    {
+                        this.model.material.map = tex
+                        this.model.material.needsUpdate = true
+                    }
+                },
+                undefined,
+                (err) => {
+                    console.warn('Failed to load screen image:', this.sourcePath, err)
+                }
+            )
         }
 
         // Material
-        this.model.material = new THREE.MeshBasicMaterial({
-            map: this.model.texture
-        })
+        this.model.material = new THREE.MeshBasicMaterial({ map: this.model.texture, toneMapped: false })
 
         // Mesh
         this.model.mesh = this.mesh
