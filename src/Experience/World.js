@@ -75,7 +75,8 @@ export default class World
     {
         this.pcScreen = new Screen(
             this.resources.items.pcScreenModel.scene.children[0],
-            '/assets/unnamed.png'
+            '/assets/unnamed.png',
+            { fitToMeshAspect: true }
         )
         this.macScreen = new Screen(
             this.resources.items.macScreenModel.scene.children[0],

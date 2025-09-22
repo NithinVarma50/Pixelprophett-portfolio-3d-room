@@ -16,6 +16,8 @@ export default class Screen
         this.sourcePath = _sourcePath
         this.options = {
             cropAspect: null, // e.g., 16/10 for 16:10 crop; null to show full image
+            fitToMeshAspect: false, // if true, ignore cropAspect and use the mesh's aspect
+            mirrorX: true, // fix reversed UVs by default
             ..._options
         }
 
@@ -91,11 +93,27 @@ export default class Screen
         this.scene.add(this.model.mesh)
     }
 
+    getMeshAspect()
+    {
+        // Compute world-space bounds and aspect (width/height) for the mesh's screen
+        const box = new THREE.Box3().setFromObject(this.mesh)
+        const size = new THREE.Vector3()
+        box.getSize(size)
+        // Use X and Y extents (assuming screen plane is roughly axis-aligned locally)
+        const width = Math.max(1e-6, size.x)
+        const height = Math.max(1e-6, size.y)
+        return width / height
+    }
+
     applyCroppingIfNeeded()
     {
         const tex = this.model.texture
         if(!tex) return
-        const desired = this.options.cropAspect
+        let desired = this.options.cropAspect
+        if(this.options.fitToMeshAspect)
+        {
+            try { desired = this.getMeshAspect() } catch(e) { /* noop */ }
+        }
         if(!desired || !tex.image || !tex.image.width || !tex.image.height)
         {
             // Reset to full image if no cropping desired or not yet possible
@@ -129,6 +147,14 @@ export default class Screen
             offsetX = (1 - repeatX) * 0.5
         }
         // else desired == imgAspect: no crop
+
+        // Apply mirror if needed (fix reversed image)
+        if(this.options.mirrorX)
+        {
+            // invert horizontally while keeping the crop centered
+            offsetX = 1 - offsetX - repeatX
+            repeatX = -repeatX
+        }
 
         tex.wrapS = THREE.ClampToEdgeWrapping
         tex.wrapT = THREE.ClampToEdgeWrapping
