@@ -76,7 +76,7 @@ export default class World
         this.pcScreen = new Screen(
             this.resources.items.pcScreenModel.scene.children[0],
             '/assets/unnamed.png',
-            { cacheBust: true, zoom: 1.35, flipY: true }
+            { cacheBust: true, flipY: true, zoomX: 1.12, zoomY: 1.45 }
         )
         this.macScreen = new Screen(
             this.resources.items.macScreenModel.scene.children[0],

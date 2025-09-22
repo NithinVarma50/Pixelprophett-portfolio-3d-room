@@ -20,7 +20,9 @@ export default class Screen
             rotate180: false, // rotate texture 180 degrees
             flipVertical: false, // flip along Y in UV space
             flipHorizontal: false, // flip along X in UV space
-            zoom: 1, // >1 to slightly zoom-in (overscan) to hide borders
+            zoom: 1, // >1 to slightly zoom-in (overscan) to hide borders (uniform)
+            zoomX: undefined, // optional per-axis override
+            zoomY: undefined, // optional per-axis override
             flipY: undefined, // if set, overrides tex.flipY
             ..._options
         }
@@ -175,11 +177,13 @@ export default class Screen
         }
 
         // Apply zoom (overscan). Zoom>1 means view a smaller portion of the texture.
-        const zoom = Math.max(0.5, this.options.zoom || 1)
-        if(zoom !== 1)
+        const zoomUniform = Math.max(0.5, this.options.zoom || 1)
+        const zoomX = Math.max(0.5, this.options.zoomX || zoomUniform)
+        const zoomY = Math.max(0.5, this.options.zoomY || zoomUniform)
+        if(zoomX !== 1 || zoomY !== 1)
         {
-            const zX = repeatX / zoom
-            const zY = repeatY / zoom
+            const zX = repeatX / zoomX
+            const zY = repeatY / zoomY
             // Re-center after zoom
             offsetX = offsetX + (repeatX - zX) * 0.5
             offsetY = offsetY + (repeatY - zY) * 0.5
