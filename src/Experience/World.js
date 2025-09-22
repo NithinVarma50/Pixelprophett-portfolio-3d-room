@@ -75,12 +75,13 @@ export default class World
     {
         this.pcScreen = new Screen(
             this.resources.items.pcScreenModel.scene.children[0],
-            '/assets/unnamed.png'
+            '/assets/unnamed.png',
+            { textureRotation: Math.PI, coverToMesh: true }
         )
         this.macScreen = new Screen(
             this.resources.items.macScreenModel.scene.children[0],
             '/assets/unnamed.png',
-            { cropAspect: 16 / 10 }
+            { textureRotation: Math.PI, coverToMesh: true }
         )
     }
 

@@ -16,6 +16,9 @@ export default class Screen
         this.sourcePath = _sourcePath
         this.options = {
             cropAspect: null, // e.g., 16/10 for 16:10 crop; null to show full image
+            coverToMesh: true, // when true, compute mesh aspect and crop to fill without distortion
+            textureRotation: 0, // radians; set to Math.PI if texture appears upside down
+            flipY: false, // force flipY setting on texture
             ..._options
         }
 
@@ -43,7 +46,8 @@ export default class Screen
             // Video texture
             this.model.texture = new THREE.VideoTexture(this.model.element)
             this.model.texture.encoding = THREE.sRGBEncoding
-            this.applyCroppingIfNeeded()
+            this.model.texture.flipY = this.options.flipY === true
+            this.applyCroppingAndTransforms()
         }
         else
         {
@@ -60,7 +64,7 @@ export default class Screen
                     } else {
                         tex.encoding = THREE.sRGBEncoding
                     }
-                    tex.flipY = false // Match GLTF/video screen UVs
+                    tex.flipY = this.options.flipY === true ? true : false // default false to match GLTF UVs
                     // Improve readability on steep angles
                     tex.anisotropy = Math.min(16, this.experience.renderer.instance.capabilities.getMaxAnisotropy?.() || 8)
                     tex.minFilter = THREE.LinearFilter
@@ -68,7 +72,7 @@ export default class Screen
                     tex.generateMipmaps = false
                     tex.needsUpdate = true
                     this.model.texture = tex
-                    this.applyCroppingIfNeeded()
+                    this.applyCroppingAndTransforms()
                     if(this.model.material)
                     {
                         this.model.material.map = tex
@@ -83,7 +87,7 @@ export default class Screen
         }
 
         // Material
-        this.model.material = new THREE.MeshBasicMaterial({ map: this.model.texture, toneMapped: false })
+        this.model.material = new THREE.MeshBasicMaterial({ map: this.model.texture, toneMapped: false, side: THREE.DoubleSide })
 
         // Mesh
         this.model.mesh = this.mesh
@@ -91,25 +95,50 @@ export default class Screen
         this.scene.add(this.model.mesh)
     }
 
-    applyCroppingIfNeeded()
+    getMeshAspect()
+    {
+        if(!this.mesh || !this.mesh.geometry) return null
+        const geo = this.mesh.geometry
+        if(!geo.boundingBox) geo.computeBoundingBox()
+        const bb = geo.boundingBox
+        if(!bb) return null
+        const size = new THREE.Vector3()
+        bb.getSize(size)
+        // Use X (width) and Y (height) dimensions in local space
+        const width = Math.abs(size.x) > 0 ? Math.abs(size.x) : 1
+        const height = Math.abs(size.y) > 0 ? Math.abs(size.y) : 1
+        return width / height
+    }
+
+    applyCroppingAndTransforms()
     {
         const tex = this.model.texture
         if(!tex) return
-        const desired = this.options.cropAspect
+
+        // Determine desired aspect
+        let desired = this.options.cropAspect
+        if(this.options.coverToMesh)
+        {
+            const meshAspect = this.getMeshAspect()
+            if(meshAspect) desired = meshAspect
+        }
+
+        // If we cannot determine desired or texture not ready, reset
         if(!desired || !tex.image || !tex.image.width || !tex.image.height)
         {
-            // Reset to full image if no cropping desired or not yet possible
             tex.offset.set(0, 0)
             tex.repeat.set(1, 1)
             tex.wrapS = THREE.ClampToEdgeWrapping
             tex.wrapT = THREE.ClampToEdgeWrapping
+            tex.center.set(0.5, 0.5)
+            tex.rotation = this.options.textureRotation || 0
             tex.needsUpdate = true
             return
         }
 
         const imgAspect = tex.image.width / tex.image.height
 
-        // Initialize
+        // Central crop to cover desired aspect
         let repeatX = 1
         let repeatY = 1
         let offsetX = 0
@@ -117,23 +146,23 @@ export default class Screen
 
         if(desired > imgAspect)
         {
-            // Desired is wider than the image => crop vertically (top/bottom)
-            // width remains 1, reduce height to match aspect
+            // Crop top/bottom
             repeatY = imgAspect / desired
             offsetY = (1 - repeatY) * 0.5
         }
         else if(desired < imgAspect)
         {
-            // Desired is narrower than the image => crop horizontally (left/right)
+            // Crop left/right
             repeatX = desired / imgAspect
             offsetX = (1 - repeatX) * 0.5
         }
-        // else desired == imgAspect: no crop
 
         tex.wrapS = THREE.ClampToEdgeWrapping
         tex.wrapT = THREE.ClampToEdgeWrapping
         tex.repeat.set(repeatX, repeatY)
         tex.offset.set(offsetX, offsetY)
+        tex.center.set(0.5, 0.5)
+        tex.rotation = this.options.textureRotation || 0 // allow forcing upright
         tex.needsUpdate = true
     }
 
