@@ -79,7 +79,8 @@ export default class World
         )
         this.macScreen = new Screen(
             this.resources.items.macScreenModel.scene.children[0],
-            '/assets/unnamed.png'
+            '/assets/unnamed.png',
+            { cropAspect: 16 / 10 }
         )
     }
 

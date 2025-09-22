@@ -4,7 +4,7 @@ import Experience from './Experience.js'
 
 export default class Screen
 {
-    constructor(_mesh, _sourcePath)
+    constructor(_mesh, _sourcePath, _options = {})
     {
         this.experience = new Experience()
         this.resources = this.experience.resources
@@ -14,6 +14,10 @@ export default class Screen
 
         this.mesh = _mesh
         this.sourcePath = _sourcePath
+        this.options = {
+            cropAspect: null, // e.g., 16/10 for 16:10 crop; null to show full image
+            ..._options
+        }
 
         this.setModel()
     }
@@ -39,6 +43,7 @@ export default class Screen
             // Video texture
             this.model.texture = new THREE.VideoTexture(this.model.element)
             this.model.texture.encoding = THREE.sRGBEncoding
+            this.applyCroppingIfNeeded()
         }
         else
         {
@@ -63,6 +68,7 @@ export default class Screen
                     tex.generateMipmaps = false
                     tex.needsUpdate = true
                     this.model.texture = tex
+                    this.applyCroppingIfNeeded()
                     if(this.model.material)
                     {
                         this.model.material.map = tex
@@ -83,6 +89,52 @@ export default class Screen
         this.model.mesh = this.mesh
         this.model.mesh.material = this.model.material
         this.scene.add(this.model.mesh)
+    }
+
+    applyCroppingIfNeeded()
+    {
+        const tex = this.model.texture
+        if(!tex) return
+        const desired = this.options.cropAspect
+        if(!desired || !tex.image || !tex.image.width || !tex.image.height)
+        {
+            // Reset to full image if no cropping desired or not yet possible
+            tex.offset.set(0, 0)
+            tex.repeat.set(1, 1)
+            tex.wrapS = THREE.ClampToEdgeWrapping
+            tex.wrapT = THREE.ClampToEdgeWrapping
+            tex.needsUpdate = true
+            return
+        }
+
+        const imgAspect = tex.image.width / tex.image.height
+
+        // Initialize
+        let repeatX = 1
+        let repeatY = 1
+        let offsetX = 0
+        let offsetY = 0
+
+        if(desired > imgAspect)
+        {
+            // Desired is wider than the image => crop vertically (top/bottom)
+            // width remains 1, reduce height to match aspect
+            repeatY = imgAspect / desired
+            offsetY = (1 - repeatY) * 0.5
+        }
+        else if(desired < imgAspect)
+        {
+            // Desired is narrower than the image => crop horizontally (left/right)
+            repeatX = desired / imgAspect
+            offsetX = (1 - repeatX) * 0.5
+        }
+        // else desired == imgAspect: no crop
+
+        tex.wrapS = THREE.ClampToEdgeWrapping
+        tex.wrapT = THREE.ClampToEdgeWrapping
+        tex.repeat.set(repeatX, repeatY)
+        tex.offset.set(offsetX, offsetY)
+        tex.needsUpdate = true
     }
 
     update()
