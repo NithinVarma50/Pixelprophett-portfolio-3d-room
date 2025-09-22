@@ -22,19 +22,32 @@ export default class Screen
     {
         this.model = {}
 
-        // Element
-        this.model.element = document.createElement('video')
-        this.model.element.muted = true
-        this.model.element.loop = true
-        this.model.element.controls = true
-        this.model.element.playsInline = true
-        this.model.element.autoplay = true
-        this.model.element.src = this.sourcePath
-        this.model.element.play()
+        const isVideo = typeof this.sourcePath === 'string' && /\.(mp4|webm|ogg)$/i.test(this.sourcePath)
 
-        // Texture
-        this.model.texture = new THREE.VideoTexture(this.model.element)
-        this.model.texture.encoding = THREE.sRGBEncoding
+        if(isVideo)
+        {
+            // Video element
+            this.model.element = document.createElement('video')
+            this.model.element.muted = true
+            this.model.element.loop = true
+            this.model.element.controls = true
+            this.model.element.playsInline = true
+            this.model.element.autoplay = true
+            this.model.element.src = this.sourcePath
+            this.model.element.play()
+
+            // Video texture
+            this.model.texture = new THREE.VideoTexture(this.model.element)
+            this.model.texture.encoding = THREE.sRGBEncoding
+        }
+        else
+        {
+            // Image texture
+            this.model.texture = new THREE.TextureLoader().load(this.sourcePath)
+            this.model.texture.encoding = THREE.sRGBEncoding
+            // Match GLTF/video screen UVs (video textures default flipY=false)
+            this.model.texture.flipY = false
+        }
 
         // Material
         this.model.material = new THREE.MeshBasicMaterial({
