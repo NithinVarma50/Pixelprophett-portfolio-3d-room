@@ -16,9 +16,6 @@ export default class Screen
         this.sourcePath = _sourcePath
         this.options = {
             cropAspect: null, // e.g., 16/10 for 16:10 crop; null to show full image
-            fitToMeshAspect: false, // if true, ignore cropAspect and use the mesh's aspect
-            mirrorX: true, // fix reversed UVs by default
-            useHolderPlane: true, // create a dedicated plane in front of the screen to ensure full-coverage image
             ..._options
         }
 
@@ -86,67 +83,19 @@ export default class Screen
         }
 
         // Material
-        this.model.material = new THREE.MeshBasicMaterial({ map: this.model.texture, toneMapped: false, side: THREE.DoubleSide })
+        this.model.material = new THREE.MeshBasicMaterial({ map: this.model.texture, toneMapped: false })
 
-        // Use a holder plane for reliable full coverage, otherwise replace mesh material
-        if(this.options.useHolderPlane)
-        {
-            // Compute world transform of the original screen
-            const worldPos = new THREE.Vector3()
-            const worldQuat = new THREE.Quaternion()
-            const worldScale = new THREE.Vector3()
-            this.mesh.updateWorldMatrix(true, true)
-            this.mesh.matrixWorld.decompose(worldPos, worldQuat, worldScale)
-
-            // Compute size from the mesh bounding box (x,y)
-            const box = new THREE.Box3().setFromObject(this.mesh)
-            const size = new THREE.Vector3()
-            box.getSize(size)
-            const width = Math.max(1e-4, size.x)
-            const height = Math.max(1e-4, size.y)
-
-            // Geometry oriented as a plane facing +Z in local, we rotate by worldQuat
-            this.model.geometry = new THREE.PlaneGeometry(width, height)
-            this.model.holder = new THREE.Mesh(this.model.geometry, this.model.material)
-            this.model.holder.quaternion.copy(worldQuat)
-
-            // Offset slightly along the screen's forward to avoid z-fighting
-            const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuat)
-            const offset = forward.clone().multiplyScalar(0.001)
-            this.model.holder.position.copy(worldPos.clone().add(offset))
-
-            this.scene.add(this.model.holder)
-        }
-        else
-        {
-            // Mesh
-            this.model.mesh = this.mesh
-            this.model.mesh.material = this.model.material
-            this.scene.add(this.model.mesh)
-        }
-    }
-
-    getMeshAspect()
-    {
-        // Compute world-space bounds and aspect (width/height) for the mesh's screen
-        const box = new THREE.Box3().setFromObject(this.mesh)
-        const size = new THREE.Vector3()
-        box.getSize(size)
-        // Use X and Y extents (assuming screen plane is roughly axis-aligned locally)
-        const width = Math.max(1e-6, size.x)
-        const height = Math.max(1e-6, size.y)
-        return width / height
+        // Mesh
+        this.model.mesh = this.mesh
+        this.model.mesh.material = this.model.material
+        this.scene.add(this.model.mesh)
     }
 
     applyCroppingIfNeeded()
     {
         const tex = this.model.texture
         if(!tex) return
-        let desired = this.options.cropAspect
-        if(this.options.fitToMeshAspect)
-        {
-            try { desired = this.getMeshAspect() } catch(e) { /* noop */ }
-        }
+        const desired = this.options.cropAspect
         if(!desired || !tex.image || !tex.image.width || !tex.image.height)
         {
             // Reset to full image if no cropping desired or not yet possible
@@ -180,14 +129,6 @@ export default class Screen
             offsetX = (1 - repeatX) * 0.5
         }
         // else desired == imgAspect: no crop
-
-        // Apply mirror if needed (fix reversed image)
-        if(this.options.mirrorX)
-        {
-            // invert horizontally while keeping the crop centered
-            offsetX = 1 - offsetX - repeatX
-            repeatX = -repeatX
-        }
 
         tex.wrapS = THREE.ClampToEdgeWrapping
         tex.wrapT = THREE.ClampToEdgeWrapping
